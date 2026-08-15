@@ -3,8 +3,11 @@
   "version": "0.2.0",
   "description": "Generate faithful summaries, timestamped technical evidence, and structured JSON from local videos.",
   "author": {
-    "name": "Video Parser Contributors"
+    "name": "Terry-J-Ola",
+    "url": "https://github.com/Terry-J-Ola"
   },
+  "homepage": "https://github.com/Terry-J-Ola/video-parser",
+  "repository": "https://github.com/Terry-J-Ola/video-parser",
   "keywords": [
     "video",
     "summary",
@@ -17,13 +20,14 @@
     "displayName": "Video Content Parser",
     "shortDescription": "从本地视频生成忠实概要、技术证据稿和结构化结果",
     "longDescription": "调用本地 Python CLI 提取视频语音和关键帧，并生成忠实的视频内容概要、带时间戳的技术证据稿以及结构化 JSON。",
-    "developerName": "Video Parser Contributors",
+    "developerName": "Terry-J-Ola",
     "category": "Productivity",
     "capabilities": [
       "Local file processing",
       "Video analysis",
       "Structured output"
     ],
+    "websiteURL": "https://github.com/Terry-J-Ola/video-parser",
     "defaultPrompt": [
       "处理我指定目录中的本地视频，输出忠实概要、技术证据稿和结构化 JSON。",
       "检查视频解析环境并引导我完成首次配置。"

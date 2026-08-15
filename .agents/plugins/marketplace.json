@@ -1,0 +1,21 @@
+{
+  "name": "terry-j-ola-plugins",
+  "interface": {
+    "displayName": "Terry-J-Ola Plugins"
+  },
+  "plugins": [
+    {
+      "name": "video-parser",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Terry-J-Ola/video-parser.git",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

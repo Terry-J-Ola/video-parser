@@ -66,3 +66,19 @@ video-content-parser <视频路径> <输出目录> --result-format json
 首次使用时，Codex 会检查运行环境；如果 CLI 尚未安装，Skill 会在用户目录 `~/.video-parser/runtime` 创建私有虚拟环境并从当前插件根目录安装。如果尚未配置模型服务，Skill 会引导用户通过隐藏输入将 Key 写入用户级配置文件。
 
 插件当前采用最小的 Skills-only 形态，不包含 MCP 服务或自定义 UI。发布到公开仓库后，可以加入仓库 Marketplace 或提交到 ChatGPT 与 Codex 共用的公共 Plugins Directory。
+
+### 从 GitHub 安装插件
+
+其他用户安装 Codex/ChatGPT 桌面应用后，可以在终端添加本仓库 Marketplace：
+
+```powershell
+codex plugin marketplace add Terry-J-Ola/video-parser --ref main
+```
+
+然后在桌面应用的 Plugins Directory 中选择 `Terry-J-Ola Plugins`，安装 `Video Content Parser`，并新建一个任务。例如告诉 Codex：
+
+```text
+使用 summarize-video，把 D:\videos 中的视频处理到 D:\video-output。
+```
+
+首次运行时，Skill 会检查 Python、FFmpeg 和 FFprobe。如果 Python 依赖尚未安装，会把私有运行时安装到用户目录；FFmpeg/FFprobe 缺失时会提示用户先安装。API Key 由用户在本机配置，不会上传到 GitHub 或写入视频产物。
