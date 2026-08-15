@@ -1,0 +1,4 @@
+interface:
+  display_name: "视频内容概要"
+  short_description: "从本地视频证据生成忠实概要、技术证据稿和结构化结果文件"
+  default_prompt: "Use $summarize-video to summarize a local video from its extracted evidence."

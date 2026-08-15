@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-content-parser"
+version = "0.2.0"
+description = "Evidence-grounded local video summarization CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "imageio-ffmpeg==0.6.0",
+    "openai==2.47.0",
+    "pydantic==2.13.4",
+    "python-dotenv==1.2.2",
+    "Pillow==12.3.0",
+]
+
+[project.scripts]
+video-content-parser = "video_content_parser.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
