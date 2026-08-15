@@ -81,4 +81,4 @@ codex plugin marketplace add Terry-J-Ola/video-parser --ref main
 使用 summarize-video，把 D:\videos 中的视频处理到 D:\video-output。
 ```
 
-首次运行时，Skill 会检查 Python、FFmpeg 和 FFprobe。如果 Python 依赖尚未安装，会把私有运行时安装到用户目录；FFmpeg/FFprobe 缺失时会提示用户先安装。API Key 由用户在本机配置，不会上传到 GitHub 或写入视频产物。
+首次运行时，Skill 会检查 CLI 和模型服务配置。用户需要 Python 3.10+，并能访问 Python 依赖源和所配置的模型服务；Skill 会把 Python 依赖安装到用户目录下的私有运行时。媒体处理使用 `imageio-ffmpeg` 提供的 FFmpeg，不要求用户另行配置系统 `ffprobe`。API Key 只保存在用户本机，不会上传到 GitHub 或写入视频产物。
