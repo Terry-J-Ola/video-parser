@@ -1,6 +1,6 @@
 {
   "name": "video-parser",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Generate faithful summaries, timestamped technical evidence, structured JSON, and batch XLSX statistics from local videos.",
   "author": {
     "name": "Terry-J-Ola",

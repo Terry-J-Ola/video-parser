@@ -19,12 +19,12 @@ def private_cli_path() -> Path:
 
 
 def find_command() -> list[str] | None:
-    command = shutil.which("video-content-parser")
-    if command:
-        return [command]
     private = private_cli_path()
     if private.is_file():
         return [str(private)]
+    command = shutil.which("video-content-parser")
+    if command:
+        return [command]
     if importlib.util.find_spec("video_content_parser") is not None:
         return [sys.executable, "-m", "video_content_parser"]
     return None

@@ -7,12 +7,41 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
 def _repository_root() -> Path | None:
     candidate = Path(__file__).resolve().parents[3]
     return candidate if (candidate / "pyproject.toml").is_file() else None
+
+
+def _install_from_built_wheel(python: Path, source: str) -> None:
+    """Build with the host Python, then install the wheel into the private runtime."""
+
+    with tempfile.TemporaryDirectory(prefix="video-parser-wheel-") as temp_dir:
+        wheel_dir = Path(temp_dir)
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "wheel",
+                "--no-deps",
+                "--no-build-isolation",
+                "--wheel-dir",
+                str(wheel_dir),
+                source,
+            ],
+            check=True,
+        )
+        wheels = sorted(wheel_dir.glob("*.whl"))
+        if len(wheels) != 1:
+            raise RuntimeError(f"Expected one built wheel, found {len(wheels)}")
+        subprocess.run(
+            [str(python), "-m", "pip", "install", "--upgrade", str(wheels[0])],
+            check=True,
+        )
 
 
 def main() -> int:
@@ -45,13 +74,19 @@ def main() -> int:
         subprocess.run([sys.executable, "-m", "venv", str(runtime_dir)], check=True)
 
     python = runtime_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    subprocess.run(
-        [str(python), "-m", "pip", "install", "--upgrade", source],
-        check=True,
-    )
+    install_command = [str(python), "-m", "pip", "install", "--upgrade", source]
+    try:
+        subprocess.run(install_command, check=True)
+    except subprocess.CalledProcessError:
+        print(
+            "Direct install failed; building a wheel with the host Python and retrying.",
+            file=sys.stderr,
+        )
+        _install_from_built_wheel(python, source)
     cli = runtime_dir / (
         "Scripts/video-content-parser.exe" if os.name == "nt" else "bin/video-content-parser"
     )
+    subprocess.run([str(cli), "--version"], check=True)
     print(f"Runtime installed: {cli.resolve()}")
     return 0
 

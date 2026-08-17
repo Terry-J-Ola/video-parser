@@ -12,7 +12,7 @@ Use the bundled scripts instead of reconstructing shell commands. Keep every out
 1. Resolve every input video to an absolute local path. Do not upload or copy the video elsewhere yourself.
 2. Run `python scripts/check_runtime.py`.
 3. If configuration is missing, ask the user to run `python scripts/configure.py`. Never request that the user paste an API key into chat.
-4. If the CLI runtime is missing, run `python scripts/install_runtime.py`. When the Skill is installed outside this repository, supply `--source` with the approved Python package or Git URL.
+4. If the CLI runtime is missing or `runtime_update_required` is true, run `python scripts/install_runtime.py`. When the Skill is installed outside this repository, supply `--source` with the approved Python package or Git URL.
 5. Run one video with:
 
    ```text

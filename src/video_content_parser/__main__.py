@@ -24,6 +24,7 @@ from pathlib import Path
 
 from .config import load_provider_config
 from .batch_xlsx import export_batch_summary_xlsx
+from . import __version__
 from .models import TokenUsage
 from .options import VideoParseOptions
 from .parser import VideoParser
@@ -107,6 +108,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         prog="video-content-parser",
         description="Lightweight video content parser",
     )
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("source", type=Path, nargs="?", default=None,
                    help="Input video file path (omit for batch processing of ./input/)")
     p.add_argument("output_dir", type=Path, nargs="?", default=None,
