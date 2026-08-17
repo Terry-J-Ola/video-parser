@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import csv
 import json
 import shutil
 import sys
@@ -24,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import load_provider_config
+from .batch_xlsx import export_batch_summary_xlsx
 from .models import TokenUsage
 from .options import VideoParseOptions
 from .parser import VideoParser
@@ -73,7 +73,7 @@ def build_cli_payload(mode: str, records: list[VideoRecord]) -> dict[str, object
         for status in ("complete", "partial", "skipped", "failed")
     }
     return {
-        "schema_version": "video_content_parser.cli.v1",
+        "schema_version": "video_content_parser.cli.v2",
         "mode": mode,
         "summary": counts,
         "results": [record.to_dict() for record in records],
@@ -448,14 +448,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.result_format == "text":
         _print_batch_summary_table(records)
 
-    # ── 导出 CSV 汇总文件 ──
+    # ── 导出 XLSX 汇总文件 ──
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = output_root / f"batch_summary_{timestamp}.csv"
-    _export_batch_summary_csv(records, csv_path)
+    xlsx_path = output_root / f"batch_summary_{timestamp}.xlsx"
+    export_batch_summary_xlsx(records, xlsx_path)
 
     if args.result_format == "json":
         payload = build_cli_payload("batch", records)
-        payload["batch_summary_csv"] = str(csv_path.resolve())
+        payload["batch_summary_xlsx"] = str(xlsx_path.resolve())
         print(json.dumps(payload, ensure_ascii=False))
     else:
         print(f"{'='*50}")
@@ -468,7 +468,7 @@ def main(argv: list[str] | None = None) -> int:
             f"completion={batch_token_usage.total_completion_tokens} "
             f"total={batch_token_usage.total_tokens}"
         )
-        print(f"  CSV 汇总: {csv_path}")
+        print(f"  XLSX 汇总: {xlsx_path}")
         print(f"{'='*50}")
 
     if fail_count > 0:
@@ -540,32 +540,5 @@ def _print_batch_summary_table(records: list[VideoRecord]) -> None:
     )
     print(summary_row)
     print("=" * 70)
-
-
-def _export_batch_summary_csv(records: list[VideoRecord], csv_path: Path) -> None:
-    """把批量处理记录导出为 CSV 文件。
-
-    使用 utf-8-sig 编码（带 BOM），确保 Excel 打开时中文不乱码。
-    """
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    # newline='' 避免 Windows 下 csv 写入出现空行
-    with csv_path.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["序号", "文件名", "状态", "Token总量", "耗时(秒)"])
-        total_tokens = 0
-        total_time = 0.0
-        for i, r in enumerate(records, start=1):
-            total_tokens += r.total_tokens
-            total_time += r.elapsed_seconds
-            writer.writerow([
-                i,
-                r.name,
-                r.status,
-                r.total_tokens,
-                f"{r.elapsed_seconds:.2f}",
-            ])
-        writer.writerow(["", "合计", "", total_tokens, f"{total_time:.2f}"])
-
-
 if __name__ == "__main__":
     sys.exit(main())

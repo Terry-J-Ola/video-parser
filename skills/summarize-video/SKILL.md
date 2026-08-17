@@ -1,6 +1,6 @@
 ---
 name: summarize-video
-description: Convert local video files into a faithful Chinese content summary, a timestamped technical evidence document, and structured JSON by using the video-content-parser CLI. Use when Codex needs to summarize one or more local training, presentation, demonstration, interview, or business videos; extract what a video actually says; or generate auditable Markdown evidence without inventing unsupported content.
+description: Convert local video files into a faithful Chinese content summary, a timestamped technical evidence document, structured JSON, and a batch XLSX statistics workbook by using the video-content-parser CLI. Use when Codex needs to summarize one or more local training, presentation, demonstration, interview, or business videos; extract what a video actually says; or generate auditable Markdown evidence without inventing unsupported content.
 ---
 
 # Summarize Video
@@ -26,7 +26,7 @@ Use the bundled scripts instead of reconstructing shell commands. Keep every out
    ```
 
 7. Parse the JSON printed to stdout. Read `references/output-contract.md` when interpreting exit codes or artifact fields.
-8. Return clickable paths for the video summary, technical evidence Markdown, and `parse_result.json`. Report warnings without presenting them as video content.
+8. Return clickable paths for the video summary, technical evidence Markdown, and `parse_result.json`. For batch runs, also return the `batch_summary_*.xlsx` workbook containing per-video and total elapsed time and token usage. Report warnings without presenting them as video content.
 
 ## Content Rules
 
