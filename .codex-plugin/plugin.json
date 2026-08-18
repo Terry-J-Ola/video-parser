@@ -1,6 +1,6 @@
 {
   "name": "video-parser",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Generate faithful summaries, timestamped technical evidence, structured JSON, and batch XLSX statistics from local videos.",
   "author": {
     "name": "Terry-J-Ola",
@@ -19,7 +19,7 @@
   "interface": {
     "displayName": "Video Content Parser",
     "shortDescription": "从本地视频生成忠实概要、技术证据稿和批量统计表",
-    "longDescription": "调用本地 Python CLI 提取视频语音和关键帧，生成忠实的视频内容概要、带时间戳的技术证据稿、结构化 JSON，以及记录逐视频与批次总耗时和 Token 的 XLSX 统计表。",
+    "longDescription": "调用本地 Python CLI 提取视频语音和关键帧，生成忠实的视频内容概要、带时间戳的技术证据稿、结构化 JSON，以及按 ASR、VLM、概要模型分别记录逐视频与批次 Token 和耗时的 XLSX 统计表。",
     "developerName": "Terry-J-Ola",
     "category": "Productivity",
     "capabilities": [

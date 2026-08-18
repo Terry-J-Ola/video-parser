@@ -41,6 +41,12 @@ class VideoRecord:
     status: str           # complete / partial / skipped / failed
     total_tokens: int
     elapsed_seconds: float
+    asr_model: str = ""
+    asr_tokens: int = 0
+    vlm_model: str = ""
+    vlm_tokens: int = 0
+    summary_model: str = ""
+    summary_tokens: int = 0
     output_dir: Path | None = None
     result_json: Path | None = None
     evidence_markdown: Path | None = None
@@ -57,6 +63,20 @@ class VideoRecord:
             "name": self.name,
             "status": self.status,
             "total_tokens": self.total_tokens,
+            "token_usage": {
+                "asr": {
+                    "model": self.asr_model or None,
+                    "total_tokens": self.asr_tokens,
+                },
+                "vlm": {
+                    "model": self.vlm_model or None,
+                    "total_tokens": self.vlm_tokens,
+                },
+                "summary": {
+                    "model": self.summary_model or None,
+                    "total_tokens": self.summary_tokens,
+                },
+            },
             "elapsed_seconds": round(self.elapsed_seconds, 3),
             "output_dir": absolute(self.output_dir),
             "result_json": absolute(self.result_json),
@@ -74,7 +94,7 @@ def build_cli_payload(mode: str, records: list[VideoRecord]) -> dict[str, object
         for status in ("complete", "partial", "skipped", "failed")
     }
     return {
-        "schema_version": "video_content_parser.cli.v2",
+        "schema_version": "video_content_parser.cli.v3",
         "mode": mode,
         "summary": counts,
         "results": [record.to_dict() for record in records],
@@ -228,6 +248,11 @@ def _process_one_video(
     - token_usage：成功处理时返回 result.token_usage（用于批量累加）；跳过/失败返回 None
     """
     emit_text = args.result_format == "text"
+    model_fields = {
+        "asr_model": args.provider_config.asr_model,
+        "vlm_model": args.provider_config.vlm_model,
+        "summary_model": args.provider_config.section_model,
+    }
     if args.source is not None:
         requested_output = args.output_dir
     else:
@@ -251,6 +276,7 @@ def _process_one_video(
             return 0, VideoRecord(
                 name=source.name, status="skipped",
                 total_tokens=0, elapsed_seconds=0.0,
+                **model_fields,
                 output_dir=existing,
                 result_json=existing / "parse_result.json",
                 evidence_markdown=(existing / evidence_name) if evidence_name else None,
@@ -279,6 +305,7 @@ def _process_one_video(
         return 1, VideoRecord(
             name=source.name, status="failed",
             total_tokens=0, elapsed_seconds=elapsed,
+            **model_fields,
             error=str(e),
         ), None
 
@@ -326,6 +353,10 @@ def _process_one_video(
         name=source.name, status=result.status,
         total_tokens=result.token_usage.total_tokens,
         elapsed_seconds=overall_elapsed,
+        asr_tokens=result.token_usage.asr.total_tokens,
+        vlm_tokens=result.token_usage.vlm.total_tokens,
+        summary_tokens=result.token_usage.sections.total_tokens,
+        **model_fields,
         output_dir=final_dir,
         result_json=final_dir / "parse_result.json",
         evidence_markdown=evidence_path,
@@ -466,7 +497,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  总耗时: {batch_elapsed:.2f}s")
         print(f"  成功: {success_count}  跳过: {skip_count}  失败: {fail_count}")
         print(
-            f"  总 token : prompt={batch_token_usage.total_prompt_tokens} "
+            f"  分模型 token: ASR={batch_token_usage.asr.total_tokens} "
+            f"VLM={batch_token_usage.vlm.total_tokens} "
+            f"概要={batch_token_usage.sections.total_tokens}"
+        )
+        print(
+            f"  总 token: prompt={batch_token_usage.total_prompt_tokens} "
             f"completion={batch_token_usage.total_completion_tokens} "
             f"total={batch_token_usage.total_tokens}"
         )
@@ -481,7 +517,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _print_batch_summary_table(records: list[VideoRecord]) -> None:
-    """打印批量处理汇总表：序号、文件名、状态、Token、耗时。
+    """打印批量处理汇总表：序号、文件名、状态、分模型 Token、总 Token、耗时。
 
     使用 _display_width 计算中文显示宽度，保证列对齐。
     """
@@ -489,7 +525,7 @@ def _print_batch_summary_table(records: list[VideoRecord]) -> None:
     idx_w = 4       # "序号"
     name_w = 36     # "文件名"
     status_w = 10   # "状态"
-    token_w = 12    # "Token"
+    token_w = 12    # 分模型和总 Token
     time_w = 10     # "耗时"
 
     def fmt_tokens(n: int) -> str:
@@ -504,7 +540,10 @@ def _print_batch_summary_table(records: list[VideoRecord]) -> None:
         f"  {_pad_to_width('序号', idx_w, 'right')}  "
         f"{_pad_to_width('文件名', name_w)}  "
         f"{_pad_to_width('状态', status_w)}  "
-        f"{_pad_to_width('Token', token_w, 'right')}  "
+        f"{_pad_to_width('ASR Token', token_w, 'right')}  "
+        f"{_pad_to_width('VLM Token', token_w, 'right')}  "
+        f"{_pad_to_width('概要 Token', token_w, 'right')}  "
+        f"{_pad_to_width('总 Token', token_w, 'right')}  "
         f"{_pad_to_width('耗时', time_w, 'right')}"
     )
 
@@ -517,15 +556,24 @@ def _print_batch_summary_table(records: list[VideoRecord]) -> None:
     print(header)
     print(sep)
 
+    total_asr_tokens = 0
+    total_vlm_tokens = 0
+    total_summary_tokens = 0
     total_tokens = 0
     total_time = 0.0
     for i, r in enumerate(records, start=1):
+        total_asr_tokens += r.asr_tokens
+        total_vlm_tokens += r.vlm_tokens
+        total_summary_tokens += r.summary_tokens
         total_tokens += r.total_tokens
         total_time += r.elapsed_seconds
         row = (
             f"  {_pad_to_width(str(i), idx_w, 'right')}  "
             f"{_pad_to_width(r.name, name_w)}  "
             f"{_pad_to_width(r.status, status_w)}  "
+            f"{_pad_to_width(fmt_tokens(r.asr_tokens), token_w, 'right')}  "
+            f"{_pad_to_width(fmt_tokens(r.vlm_tokens), token_w, 'right')}  "
+            f"{_pad_to_width(fmt_tokens(r.summary_tokens), token_w, 'right')}  "
             f"{_pad_to_width(fmt_tokens(r.total_tokens), token_w, 'right')}  "
             f"{_pad_to_width(fmt_time(r.elapsed_seconds), time_w, 'right')}"
         )
@@ -537,6 +585,9 @@ def _print_batch_summary_table(records: list[VideoRecord]) -> None:
         f"  {_pad_to_width('', idx_w, 'right')}  "
         f"{_pad_to_width('合计', name_w)}  "
         f"{_pad_to_width('', status_w)}  "
+        f"{_pad_to_width(fmt_tokens(total_asr_tokens), token_w, 'right')}  "
+        f"{_pad_to_width(fmt_tokens(total_vlm_tokens), token_w, 'right')}  "
+        f"{_pad_to_width(fmt_tokens(total_summary_tokens), token_w, 'right')}  "
         f"{_pad_to_width(fmt_tokens(total_tokens), token_w, 'right')}  "
         f"{_pad_to_width(fmt_time(total_time), time_w, 'right')}"
     )

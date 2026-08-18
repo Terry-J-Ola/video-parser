@@ -26,7 +26,7 @@ Use the bundled scripts instead of reconstructing shell commands. Keep every out
    ```
 
 7. Parse the JSON printed to stdout. Read `references/output-contract.md` when interpreting exit codes or artifact fields.
-8. Return clickable paths for the video summary, technical evidence Markdown, and `parse_result.json`. For batch runs, also return the `batch_summary_*.xlsx` workbook containing per-video and total elapsed time and token usage. Report warnings without presenting them as video content.
+8. Return clickable paths for the video summary, technical evidence Markdown, and `parse_result.json`. For batch runs, also return the `batch_summary_*.xlsx` workbook containing per-video ASR, VLM, summary-model and total token usage, plus per-video and total elapsed time. Report warnings without presenting them as video content.
 
 ## Content Rules
 

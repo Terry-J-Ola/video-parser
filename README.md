@@ -58,7 +58,7 @@ video-content-parser <视频路径> <输出目录> --result-format json
 - `<视频名>_业务讲义.md`：根据输入证据生成的视频内容概要；不扩写证据未表达的内容，不展示时间轴、证据 ID 或关键帧图片
 - `assets/audio.mp3`
 - `assets/keyframes/*.jpg`
-- 批量模式额外生成 `batch_summary_YYYYMMDD_HHMMSS.xlsx`：记录每个视频的状态、Token 总量和耗时，并通过公式汇总视频数量、总 Token 和总耗时
+- 批量模式额外生成 `batch_summary_YYYYMMDD_HHMMSS.xlsx`：逐视频记录 ASR、VLM、概要模型名称及各自 Token、Token 总量和耗时，并通过公式分别汇总三类模型 Token、总 Token、视频数量和总耗时
 
 ## Codex Plugin
 
