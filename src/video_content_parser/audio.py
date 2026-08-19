@@ -61,12 +61,24 @@ def chunk_audio(
     output_dir: Path,
     chunk_seconds: int,
     total_duration_ms: int,
+    overlap_seconds: float = 0.0,
 ) -> list[AudioChunk]:
-    """按固定时长将整段音频切分为多个 MP3 分片，供 ASR 逐段转写。"""
+    """按固定时长将整段音频切分为多个 MP3 分片，供 ASR 逐段转写。
+
+    相邻分片间可叠加 overlap_seconds 秒的重叠区，避免句子在分片边界处被截断。
+    例如 chunk_seconds=30、overlap_seconds=2 时：
+      chunk 0: [0,    30s)
+      chunk 1: [28s,  58s)   ← 前 2 秒与 chunk 0 重叠
+      chunk 2: [56s,  86s)   ← 前 2 秒与 chunk 1 重叠
+    步进 = chunk_seconds - overlap_seconds，每个分片实际时长仍为 chunk_seconds。
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     chunks: list[AudioChunk] = []
 
     chunk_ms = chunk_seconds * 1000
+    overlap_ms = int(overlap_seconds * 1000)
+    # 步进 = 分片时长 - 重叠时长；重叠为 0 时退化为原始无重叠行为
+    step_ms = chunk_ms - overlap_ms if overlap_ms > 0 else chunk_ms
     start_ms = 0
     idx = 0
 
@@ -89,7 +101,10 @@ def chunk_audio(
         if result.returncode == 0 and chunk_path.exists() and chunk_path.stat().st_size > 0:
             chunks.append(AudioChunk(path=chunk_path, start_ms=start_ms, end_ms=end_ms))
 
-        start_ms = end_ms
+        # 最后一个分片已覆盖到末尾，停止切分
+        if end_ms >= total_duration_ms:
+            break
+        start_ms = end_ms - overlap_ms if overlap_ms > 0 else end_ms
         idx += 1
 
     return chunks

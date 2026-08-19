@@ -67,52 +67,59 @@ def render_evidence_markdown(result: VideoParseResult) -> str:
         "",
         "> 本文按处理结果逐项呈现原始证据，不对缺失内容进行推断或补写。",
         "",
-        "## 音频转写证据",
+        "## 时间线证据",
         "",
     ]
 
-    if result.transcript_segments:
-        for segment in result.transcript_segments:
-            lines.extend([
-                f"### [{_format_range(segment.start_ms, segment.end_ms)}] `{segment.id}`",
-                "",
-                segment.text,
-                "",
-                f"- 时间来源：`{segment.timing_source}`",
-            ])
-            if segment.language:
-                lines.append(f"- 语言：`{segment.language}`")
-            if segment.speaker:
-                lines.append(f"- 说话人：`{segment.speaker}`")
-            lines.append("")
-    else:
-        lines.extend(["未获得可用的音频转写。", ""])
-
-    lines.extend(["## 关键帧与画面证据", ""])
+    # 把转写片段和关键帧合并为统一事件列表，按时间戳排序后交错输出
     analysis_map = {item.keyframe_id: item for item in result.frame_analyses}
-    if result.keyframes:
-        for keyframe in result.keyframes:
-            lines.extend([
-                f"### [{_format_time(keyframe.timestamp_ms)}] `{keyframe.id}`",
-                "",
-                f"![{keyframe.id}]({keyframe.image_path})",
-                "",
-                f"- 选取原因：`{keyframe.selection_reason}`",
-                f"- 图片尺寸：{keyframe.width} × {keyframe.height}",
-            ])
-            analysis = analysis_map.get(keyframe.id)
-            if analysis is None:
-                lines.extend(["- 画面分析：**缺失**", ""])
-                continue
-            lines.append(f"- 内容类型：`{analysis.content_type}`")
-            if analysis.visible_text:
-                lines.extend(["", "**画面文字：**", ""])
-                lines.extend(f"> {text}" for text in analysis.visible_text)
-            if analysis.description:
-                lines.extend(["", "**画面描述：**", "", analysis.description])
-            lines.append("")
+    events: list[tuple[int, str, object]] = []
+    for seg in result.transcript_segments:
+        events.append((seg.start_ms, "transcript", seg))
+    for kf in result.keyframes:
+        events.append((kf.timestamp_ms, "keyframe", kf))
+    # 先按时间排序，同一时间点转写优先于关键帧
+    events.sort(key=lambda e: (e[0], 0 if e[1] == "transcript" else 1))
+
+    if not events:
+        lines.extend(["未获得任何证据（转写和关键帧均为空）。", ""])
     else:
-        lines.extend(["未提取到关键帧。", ""])
+        for _, kind, item in events:
+            if kind == "transcript":
+                seg = item  # TranscriptSegment
+                lines.extend([
+                    f"### [{_format_range(seg.start_ms, seg.end_ms)}] 🔊 `{seg.id}`",
+                    "",
+                    seg.text,
+                    "",
+                    f"- 时间来源：`{seg.timing_source}`",
+                ])
+                if seg.language:
+                    lines.append(f"- 语言：`{seg.language}`")
+                if seg.speaker:
+                    lines.append(f"- 说话人：`{seg.speaker}`")
+                lines.append("")
+            else:  # keyframe
+                kf = item  # Keyframe
+                lines.extend([
+                    f"### [{_format_time(kf.timestamp_ms)}] 🖼️ `{kf.id}`",
+                    "",
+                    f"![{kf.id}]({kf.image_path})",
+                    "",
+                    f"- 选取原因：`{kf.selection_reason}`",
+                    f"- 图片尺寸：{kf.width} × {kf.height}",
+                ])
+                analysis = analysis_map.get(kf.id)
+                if analysis is None:
+                    lines.extend(["- 画面分析：**缺失**", ""])
+                    continue
+                lines.append(f"- 内容类型：`{analysis.content_type}`")
+                if analysis.visible_text:
+                    lines.extend(["", "**画面文字：**", ""])
+                    lines.extend(f"> {text}" for text in analysis.visible_text)
+                if analysis.description:
+                    lines.extend(["", "**画面描述：**", "", analysis.description])
+                lines.append("")
 
     lines.extend(["## 处理告警", ""])
     if result.warnings:

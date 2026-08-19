@@ -5,9 +5,12 @@ import base64
 from pathlib import Path
 from typing import Protocol
 
+from .logging_config import get_logger
 from .models import FrameAnalysis, Keyframe, ModelTokenUsage, Warning
 from .omni import collect_stream_text_async, parse_json_object
 from .options import VideoParseOptions
+
+logger = get_logger(__name__)
 
 # content_type 白名单，非法值统一归为 unknown
 _VALID_CONTENT_TYPES = {
@@ -140,6 +143,12 @@ class ChatVlmBackend:
         if not keyframes:
             return [], [], ModelTokenUsage()
 
+        batch_count = (len(keyframes) + self.frames_per_request - 1) // self.frames_per_request
+        logger.info(
+            "VLM 分析启动: %d 帧, %d 批（每批 %d 帧, 并发 %d）",
+            len(keyframes), batch_count, self.frames_per_request, self.concurrency,
+        )
+
         # 只有单批时无需启动事件循环，直接同步调用避免开销
         if len(keyframes) <= self.frames_per_request:
             return asyncio.run(self._analyze_batch_async(keyframes))
@@ -187,6 +196,7 @@ class ChatVlmBackend:
 
         client 为 None 时在内部创建临时 AsyncOpenAI（单批场景）。
         遇到失败时按指数退避等待后重试，应对 429 限流。
+        批次重试全部失败后，降级为单帧逐个调用，尽可能救回更多帧。
         """
         from openai import AsyncOpenAI
 
@@ -220,20 +230,29 @@ class ChatVlmBackend:
 
                     raw, usage = await collect_stream_text_async(stream)
                     analyses = _parse_batch_response(raw, valid_batch)
+                    logger.debug(
+                        "批次分析成功: %d 帧 → %d 分析结果", len(valid_batch), len(analyses),
+                    )
                     return analyses, warnings, usage
 
                 except Exception as exc:
-                    # 最后一次重试仍失败时，把整批帧都标记为分析失败告警
+                    # 最后一次重试仍失败时，降级为单帧逐个调用
                     if attempt == self.max_retries - 1:
-                        for kf in valid_batch:
-                            warnings.append(Warning(
-                                code="FRAME_ANALYSIS_FAILED",
-                                message=f"关键帧 {kf.id} 分析失败：{exc}",
-                                start_ms=kf.timestamp_ms,
-                                end_ms=kf.timestamp_ms,
-                            ))
+                        logger.warning(
+                            "批次（%d 帧）重试 %d 次后仍失败，降级为单帧逐个调用: %s",
+                            len(valid_batch), self.max_retries, exc,
+                        )
+                        single_analyses, single_warnings, single_usage = (
+                            await self._fallback_to_single_frames(valid_batch, client)
+                        )
+                        warnings.extend(single_warnings)
+                        return single_analyses, warnings, single_usage
                     else:
                         # 指数退避：1s, 2s, 4s...（应对 429 限流）
+                        logger.debug(
+                            "批次（%d 帧）第 %d 次失败，%.1fs 后重试: %s",
+                            len(valid_batch), attempt + 1, 2 ** attempt, exc,
+                        )
                         await asyncio.sleep(2 ** attempt)
         finally:
             # 单批场景创建的 client 需要显式关闭，避免资源泄漏警告
@@ -241,6 +260,66 @@ class ChatVlmBackend:
                 await client.close()
 
         return [], warnings, ModelTokenUsage()
+
+    async def _fallback_to_single_frames(
+        self,
+        frames: list[Keyframe],
+        client,
+    ) -> tuple[list[FrameAnalysis], list[Warning], ModelTokenUsage]:
+        """批次失败后降级为单帧逐个调用，尽可能救回更多帧。
+
+        批次失败通常是因为多帧 payload 过大触发限流或超时，
+        拆成单帧后 payload 小很多，成功率显著提高。
+        单帧调用也做指数退避重试，最终失败的帧才标记为告警。
+        """
+        warnings: list[Warning] = []
+        all_analyses: list[FrameAnalysis] = []
+        total_usage = ModelTokenUsage()
+
+        for kf in frames:
+            # 单帧编码
+            readable, encode_warnings = _encode_frames([kf])
+            warnings.extend(encode_warnings)
+            if not readable:
+                continue
+
+            content_parts = _build_content_parts(readable)
+
+            for attempt in range(self.max_retries):
+                try:
+                    stream = await client.chat.completions.create(
+                        model=self.model,
+                        messages=[{"role": "user", "content": content_parts}],  # type: ignore[list-item]
+                        response_format={"type": "json_object"},
+                        extra_body={"enable_thinking": False},
+                        stream=True,
+                        stream_options={"include_usage": True},
+                    )
+                    raw, usage = await collect_stream_text_async(stream)
+                    analyses = _parse_batch_response(raw, [kf])
+                    all_analyses.extend(analyses)
+                    total_usage.add(usage)
+                    break
+                except Exception as exc:
+                    if attempt == self.max_retries - 1:
+                        logger.warning("单帧 %s 分析失败: %s", kf.id, exc)
+                        warnings.append(Warning(
+                            code="FRAME_ANALYSIS_FAILED",
+                            message=f"关键帧 {kf.id} 单帧分析失败：{exc}",
+                            start_ms=kf.timestamp_ms,
+                            end_ms=kf.timestamp_ms,
+                        ))
+                    else:
+                        logger.debug(
+                            "单帧 %s 第 %d 次失败，%.1fs 后重试: %s",
+                            kf.id, attempt + 1, 2 ** attempt, exc,
+                        )
+                        await asyncio.sleep(2 ** attempt)
+
+        logger.info(
+            "单帧降级完成: 救回 %d/%d 帧", len(all_analyses), len(frames),
+        )
+        return all_analyses, warnings, total_usage
 
 
 class FakeVlmBackend:

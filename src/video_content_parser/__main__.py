@@ -25,9 +25,12 @@ from pathlib import Path
 from .config import load_provider_config
 from .batch_xlsx import export_batch_summary_xlsx
 from . import __version__
+from .logging_config import get_logger, set_current_video, setup_logging
 from .models import TokenUsage
 from .options import VideoParseOptions
 from .parser import VideoParser
+
+logger = get_logger(__name__)
 
 # 有警告结果的子目录名
 _WARNINGS_SUBDIR = "_warnings"
@@ -145,6 +148,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Force re-parse even if result already exists")
     p.add_argument("--language", type=str, default=None, help="Language hint (e.g. zh, en)")
     p.add_argument("--audio-chunk-seconds", type=int, default=30)
+    p.add_argument("--audio-overlap-seconds", type=float, default=2.0,
+                   help="Overlap seconds between ASR audio chunks to avoid sentence truncation (default: 2.0)")
     p.add_argument("--scene-threshold", type=float, default=0.30)
     p.add_argument("--fallback-frame-interval", type=float, default=10.0)
     p.add_argument("--max-keyframes", type=int, default=60)
@@ -248,6 +253,9 @@ def _process_one_video(
     - token_usage：成功处理时返回 result.token_usage（用于批量累加）；跳过/失败返回 None
     """
     emit_text = args.result_format == "text"
+    # 设置日志视频名前缀，方便批量处理时定位是哪个视频
+    set_current_video(source.name)
+    logger.info("开始处理视频")
     model_fields = {
         "asr_model": args.provider_config.asr_model,
         "vlm_model": args.provider_config.vlm_model,
@@ -264,6 +272,7 @@ def _process_one_video(
     if not args.force:
         existing = _find_existing_complete(base_output_dir)
         if existing is not None:
+            logger.info("跳过已处理视频（status=complete），如需重新解析请使用 --force")
             if emit_text:
                 print(
                     f"Skip: {source.name} already parsed "
@@ -299,6 +308,7 @@ def _process_one_video(
     except Exception as e:
         # 解析失败时清理 staging 目录
         shutil.rmtree(staging_dir, ignore_errors=True)
+        logger.exception("视频解析失败: %s", source.name)
         if emit_text:
             print(f"Error: {e}", file=sys.stderr)
         elapsed = time.perf_counter() - overall_start
@@ -402,10 +412,17 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     args.provider_config = provider_config
 
+    # 初始化日志系统：控制台 + 文件双输出，日志文件存放于 output/logs/
+    output_root = Path(args.output_root or (Path.cwd() / "output")).expanduser()
+    log_dir = output_root / "logs"
+    log_file = setup_logging(log_dir)
+    logger.info("日志文件: %s", log_file)
+
     # 把命令行参数转换为解析选项对象
     options = VideoParseOptions(
         language=args.language,
         audio_chunk_seconds=args.audio_chunk_seconds,
+        audio_overlap_seconds=args.audio_overlap_seconds,
         scene_threshold=args.scene_threshold,
         fallback_frame_interval_seconds=args.fallback_frame_interval,
         max_keyframes=args.max_keyframes,
@@ -423,7 +440,6 @@ def main(argv: list[str] | None = None) -> int:
 
     # 未指定 source → 批量处理显式 input-dir 或当前目录 input/。
     input_dir = Path(args.input_dir or (Path.cwd() / "input")).expanduser()
-    output_root = Path(args.output_root or (Path.cwd() / "output")).expanduser()
     videos = _scan_input_videos(input_dir)
     if not videos:
         message = f"No video files found in {input_dir}"
@@ -452,6 +468,7 @@ def main(argv: list[str] | None = None) -> int:
     records: list[VideoRecord] = []
 
     for idx, source in enumerate(videos, start=1):
+        logger.info("批量处理进度: %d/%d", idx, total)
         if args.result_format == "text":
             print(f"{'='*50}")
             print(f"  [{idx}/{total}] {source.name}")
@@ -459,6 +476,10 @@ def main(argv: list[str] | None = None) -> int:
 
         ret, record, usage = _process_one_video(source, args, options)
         records.append(record)
+        logger.info(
+            "视频 %s 处理完成: status=%s, tokens=%d, 耗时=%.2fs",
+            record.name, record.status, record.total_tokens, record.elapsed_seconds,
+        )
 
         # 仅对真正处理完成的视频累加 token（跳过/失败的 token=0）
         if usage is not None:
@@ -476,6 +497,10 @@ def main(argv: list[str] | None = None) -> int:
             print()
 
     batch_elapsed = time.perf_counter() - batch_start
+    logger.info(
+        "批量处理完成: 成功=%d, 跳过=%d, 失败=%d, 总耗时=%.2fs",
+        success_count, skip_count, fail_count, batch_elapsed,
+    )
 
     # ── 打印批量汇总表 ──
     if args.result_format == "text":

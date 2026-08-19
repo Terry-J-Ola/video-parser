@@ -14,6 +14,7 @@ class VideoParseOptions(BaseModel):
 
     language: str | None = None                              # 转写语言提示，None 表示自动检测
     audio_chunk_seconds: int = Field(default=30, ge=15, le=60)                # 单段音频切片时长（秒）
+    audio_overlap_seconds: float = Field(default=2.0, ge=0.0, le=10.0)        # 相邻 chunk 间的重叠时长（秒），防止截断句子
     scene_threshold: float = Field(default=0.30, ge=0.0, le=1.0)              # 场景切换判定阈值，越小越敏感
     fallback_frame_interval_seconds: float = Field(default=10.0, gt=0)        # 场景检测失败时的固定抽帧间隔（秒）
     max_keyframes: int = Field(default=60, ge=1, le=200)                      # 单视频最大保留关键帧数量

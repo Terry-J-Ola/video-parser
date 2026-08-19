@@ -9,6 +9,7 @@ import json
 import re
 from typing import Protocol
 
+from .logging_config import get_logger
 from .models import (
     FrameAnalysis,
     LearnerDocument,
@@ -20,6 +21,8 @@ from .models import (
     Warning,
 )
 from .omni import collect_stream_text, parse_json_object
+
+logger = get_logger(__name__)
 
 
 _INTERNAL_TEXT_MARKERS = (
@@ -91,6 +94,11 @@ class ChatSectionBuilder:
         if not transcripts and not frame_analyses:
             return [], None, [], total_usage
 
+        logger.info(
+            "章节构建启动: %d 个转写片段, %d 个画面分析",
+            len(transcripts), len(frame_analyses),
+        )
+
         warnings: list[Warning] = []
         last_error: Exception | None = None
 
@@ -128,18 +136,31 @@ class ChatSectionBuilder:
                 "learner_document 必须包含 title、introduction、sections、key_takeaways。"
                 "其中概要的每章必须包含 title、paragraphs、transcript_segment_ids、"
                 "keyframe_ids、illustration_keyframe_id。"
-                "概要只回答视频讲了什么，并按视频实际内容归纳主题、观点、事实、"
-                "示例和明确讲到的步骤；短视频可以只有一个主题，篇幅随证据量自适应。"
-                "不得补充输入证据没有表达的原因、价值、方法、建议、背景或结论，"
-                "不得把常识、行业知识或模型推测写成视频内容。"
-                "如果证据没有讲为什么或如何执行，就不要补写这些内容。"
-                "保留证据中明确出现的人名、术语、数字、条件和先后关系，不夸大含义。"
-                "不得在概要文本中输出时间戳、证据 ID、处理状态、模型信息、告警、"
-                "讲者原意、画面信息或技术证据标签。"
-                "所有章节必须引用输入中真实存在的证据 ID，不得编造事实或 ID。"
-                "概要中的证据 ID 只供程序校验，不会渲染。"
-                "业务讲义只输出文字概要，因此 illustration_keyframe_id 必须为 null。"
-                "标题、概要、主要内容和核心要点均使用中文。只返回 JSON 对象。\n\n"
+                "\n\n"
+                "【内容保真要求——最重要】\n"
+                "1. 段落必须忠实还原转写原文的信息密度，不要过度概括或压缩。\n"
+                "   每个段落的字数应尽量接近其引用的转写片段原文，保留具体细节而非抽象总结。\n"
+                "2. 必须保留原文中出现的：产品名称、型号、数字、颜色、尺寸、陈列位置、"
+                "操作步骤、条件限定（如\"有条件的店铺\"\"未收到时\"）和例外情况。\n"
+                "3. 如果转写原文明确讲了\"怎么做\"，段落中也必须写清\"怎么做\"，"
+                "不能只写\"需要做什么\"。\n"
+                "4. 不得丢弃原文中的任何具体要求或规范。宁可段落长一点，也不要漏掉细节。\n"
+                "\n"
+                "【内容来源要求】\n"
+                "1. 只基于输入证据回答视频讲了什么，不得补充证据未表达的原因、价值、方法、"
+                "建议、背景或结论。\n"
+                "2. 不得把常识、行业知识或模型推测写成视频内容。"
+                "如果证据没有讲为什么或如何执行，就不要补写这些内容。\n"
+                "3. 保留证据中明确出现的人名、术语、数字、条件和先后关系，不夸大含义。\n"
+                "4. 短视频可以只有一个主题，章节数量随证据量自适应。\n"
+                "\n"
+                "【格式要求】\n"
+                "1. 不得在文本中输出时间戳、证据 ID、处理状态、模型信息、告警、"
+                "讲者原意、画面信息或技术证据标签。\n"
+                "2. 所有章节必须引用输入中真实存在的证据 ID，不得编造事实或 ID。\n"
+                "3. 概要中的证据 ID 只供程序校验，不会渲染。\n"
+                "4. 业务讲义只输出文字概要，因此 illustration_keyframe_id 必须为 null。\n"
+                "5. 标题、概要、主要内容和核心要点均使用中文。只返回 JSON 对象。\n\n"
                 f"输入证据：{json.dumps(input_data, ensure_ascii=False)}"
             )
 
@@ -158,6 +179,7 @@ class ChatSectionBuilder:
                     total_usage.add(usage)
                     # 空响应直接进入下一次重试
                     if not raw:
+                        logger.debug("章节构建第 %d 次尝试返回空响应", attempt + 1)
                         continue
                     parsed = parse_json_object(raw)
                     sections_data = parsed.get("sections", [])
@@ -170,18 +192,35 @@ class ChatSectionBuilder:
                         learner_data, transcripts, frame_analyses,
                     )
                     if sections and learner_document is not None:
+                        logger.info(
+                            "章节构建成功: %d 章, %d 个概要段落",
+                            len(sections), len(learner_document.sections),
+                        )
                         return sections, learner_document, warnings, total_usage
                     last_error = ValueError("模型结果中没有可用章节或业务文章")
+                    logger.debug(
+                        "章节构建第 %d 次: 校验后 sections=%d, learner_document=%s",
+                        attempt + 1, len(sections),
+                        "有" if learner_document else "无",
+                    )
 
                 except Exception as exc:
                     last_error = exc
+                    logger.debug(
+                        "章节构建第 %d 次异常: %s", attempt + 1, exc,
+                    )
                     if attempt == self.max_retries - 1:
                         break
 
         except Exception as exc:
             last_error = exc
+            logger.warning("章节构建模型调用异常: %s", exc)
 
         # 所有重试均失败，记录警告并走确定性回退
+        logger.warning(
+            "章节模型生成失败（重试 %d 次），使用确定性回退分章: %s",
+            self.max_retries, last_error,
+        )
         warnings.append(Warning(
             code="SECTION_BUILDER_FALLBACK",
             message=(
@@ -190,6 +229,7 @@ class ChatSectionBuilder:
             ),
         ))
         fallback_sections, fallback_warnings, _ = self._fallback_build(transcripts, frame_analyses)
+        logger.info("确定性回退分章完成: %d 章", len(fallback_sections))
         return fallback_sections, None, warnings + fallback_warnings, total_usage
 
     def _validate_learner_document(
