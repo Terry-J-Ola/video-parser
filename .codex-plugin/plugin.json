@@ -1,7 +1,7 @@
 {
   "name": "video-parser",
-  "version": "0.3.2",
-  "description": "Generate faithful summaries, timestamped technical evidence, structured JSON, and batch XLSX statistics from local videos.",
+  "version": "0.4.0",
+  "description": "Generate faithful summaries, timestamped technical evidence, structured JSON, batch XLSX statistics, and DEBUG-level error-tracing logs from local videos.",
   "author": {
     "name": "Terry-J-Ola",
     "url": "https://github.com/Terry-J-Ola"
@@ -13,25 +13,36 @@
     "summary",
     "transcription",
     "evidence",
-    "qwen"
+    "qwen",
+    "logging",
+    "fidelity",
+    "error-tracing"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Video Content Parser",
-    "shortDescription": "从本地视频生成忠实概要、技术证据稿和批量统计表",
-    "longDescription": "调用本地 Python CLI 提取视频语音和关键帧，生成忠实的视频内容概要、带时间戳的技术证据稿、结构化 JSON，以及按 ASR、VLM、概要模型分别记录逐视频与批次 Token 和耗时的 XLSX 统计表。",
+    "shortDescription": "从本地视频生成忠实概要、技术证据稿、批量统计表和错误追踪日志",
+    "longDescription": "调用本地 Python CLI 提取视频语音和关键帧，生成忠实的视频内容概要、按时间戳交错排列的技术证据稿、结构化 JSON、按 ASR/VLM/概要模型分别统计 Token 和耗时的 XLSX 统计表，以及带视频名前缀和完整堆栈的 DEBUG 级运行日志。章节构建强制保留转写原文信息密度，避免过度概括导致信息丢失；ASR 分片叠加 2 秒重叠区防截断；VLM 批次失败降级单帧；关键帧去重结合 dHash 与像素级二次确认。",
     "developerName": "Terry-J-Ola",
     "category": "Productivity",
     "capabilities": [
       "Local file processing",
       "Video analysis",
       "Structured output",
-      "Batch XLSX statistics"
+      "Batch XLSX statistics",
+      "Faithful summary without over-summarization",
+      "Timestamp-interleaved evidence document",
+      "DEBUG-level error tracing logs",
+      "ASR chunk overlap to prevent truncation",
+      "VLM batch fallback to single-frame",
+      "dHash + pixel-level keyframe deduplication"
     ],
     "websiteURL": "https://github.com/Terry-J-Ola/video-parser",
     "defaultPrompt": [
       "处理我指定目录中的本地视频，输出忠实概要、技术证据稿和结构化 JSON。",
-      "检查视频解析环境并引导我完成首次配置。"
+      "检查视频解析环境并引导我完成首次配置。",
+      "解析失败或结果有警告时，定位到 output/logs/parse_*.log 排查错误堆栈。",
+      "视频内容概要信息密度不足时，提示已启用章节保真模式。"
     ]
   }
 }
