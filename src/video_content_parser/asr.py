@@ -74,6 +74,8 @@ class QwenAsrBackend:
         failed_chunks: list[str] = []
         # 记录上一个成功 chunk 的文本，用于重叠区去重
         prev_text: str | None = None
+        # 是否已向控制台公布过实际调用模型名（从 API 响应提取，非配置值）
+        model_announced = False
 
         for idx, chunk in enumerate(chunks, start=1):
             try:
@@ -82,6 +84,19 @@ class QwenAsrBackend:
                     "chunk %d/%d 转写成功: %s（%d 字）",
                     idx, len(chunks), chunk.path.name, len(text),
                 )
+                # 第一个成功 chunk 拿到 API 实际返回的模型名后立即公布，
+                # 让控制台尽早看到真实调用的模型（而非配置里的值）。
+                if not model_announced and chunk_usage.model:
+                    logger.info("ASR 实际调用模型: %s", chunk_usage.model)
+                    model_announced = True
+                # 每 10 个 chunk 或最后一个 chunk 打一条 INFO 级别进度日志，
+                # 让控制台能实时看到 ASR 转写进度（DEBUG 级别只在文件中可见）。
+                # 失败的 chunk 由下方 WARNING 日志覆盖（控制台可见）。
+                if idx % 10 == 0 or idx == len(chunks):
+                    logger.info(
+                        "ASR 转写进度: %d/%d (%d%%)",
+                        idx, len(chunks), idx * 100 // len(chunks),
+                    )
             except Exception as exc:
                 logger.warning(
                     "chunk %d/%d 转写失败: %s - %s",

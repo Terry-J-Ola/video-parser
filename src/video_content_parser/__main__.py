@@ -25,7 +25,7 @@ from pathlib import Path
 from .config import load_provider_config
 from .batch_xlsx import export_batch_summary_xlsx
 from . import __version__
-from .logging_config import get_logger, set_current_video, setup_logging
+from .logging_config import get_logger, set_current_video, setup_logging, shutdown_logging
 from .models import TokenUsage
 from .options import VideoParseOptions
 from .parser import VideoParser
@@ -375,7 +375,7 @@ def _process_one_video(
     ), result.token_usage
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     """主入口：解析参数，批量或单视频处理，返回退出码。"""
     args = build_arg_parser().parse_args(argv)
 
@@ -417,6 +417,8 @@ def main(argv: list[str] | None = None) -> int:
     log_dir = output_root / "logs"
     log_file = setup_logging(log_dir)
     logger.info("日志文件: %s", log_file)
+    logger.info("程序版本: %s", __version__)
+    logger.info("运行包路径: %s", Path(__file__).resolve().parent)
 
     # 把命令行参数转换为解析选项对象
     options = VideoParseOptions(
@@ -539,6 +541,14 @@ def main(argv: list[str] | None = None) -> int:
     if any(record.status == "partial" for record in records):
         return 4
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """运行 CLI，并保证本次调用创建的日志文件句柄被释放。"""
+    try:
+        return _main(argv)
+    finally:
+        shutdown_logging()
 
 
 def _print_batch_summary_table(records: list[VideoRecord]) -> None:

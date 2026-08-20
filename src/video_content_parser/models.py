@@ -6,9 +6,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from . import __version__
 
 
 # ---------- TranscriptSegment ----------
@@ -203,6 +206,9 @@ class ModelTokenUsage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    # 实际调用的模型名，从流式响应的 chunk.model 提取（含快照版本号）。
+    # 未调用真实模型（如 FakeBackend）时为空字符串。
+    model: str = ""
     # VLM 多模态细节（可选）
     image_tokens: int = 0
     audio_tokens: int = 0
@@ -211,10 +217,16 @@ class ModelTokenUsage(BaseModel):
     reasoning_tokens: int = 0
 
     def add(self, other: "ModelTokenUsage") -> "ModelTokenUsage":
-        """把另一个用量累加到当前实例上，并返回 self。"""
+        """把另一个用量累加到当前实例上，并返回 self。
+
+        model 字段：多个 chunk 累加时模型名应一致，self.model 已有值则保留；
+        否则取 other.model（首次填充）。这避免多 chunk 场景下 model 被覆盖为空。
+        """
         self.prompt_tokens += other.prompt_tokens
         self.completion_tokens += other.completion_tokens
         self.total_tokens += other.total_tokens
+        if not self.model and other.model:
+            self.model = other.model
         self.image_tokens += other.image_tokens
         self.audio_tokens += other.audio_tokens
         self.input_audio_tokens += other.input_audio_tokens
@@ -291,6 +303,10 @@ class VideoParseResult(BaseModel):
     """视频解析的最终聚合结果，作为对外暴露的顶层结构。"""
 
     schema_version: str = "video_parse_result.v3"
+    app_version: str = __version__
+    runtime_package_path: str = Field(
+        default_factory=lambda: str(Path(__file__).resolve().parent),
+    )
     status: ResultStatus
     source_name: str
     duration_ms: int | None

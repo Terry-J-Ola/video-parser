@@ -178,7 +178,11 @@ class VideoParser:
             logger.info("开始 ASR 转写: %s", audio_path.name)
             try:
                 transcript_segments, asr_usage = asr.transcribe(audio_path, options.language)
-                logger.info("ASR 转写完成: %d 段", len(transcript_segments))
+                logger.info(
+                    "ASR 转写完成: %d 段%s",
+                    len(transcript_segments),
+                    f"，实际模型: {asr_usage.model}" if asr_usage.model else "",
+                )
             except Exception as e:
                 logger.exception("ASR 转写整体失败")
                 warnings.append(Warning(
@@ -235,7 +239,11 @@ class VideoParser:
                 ]
                 frame_analyses, fa_warnings, vlm_usage = vlm.analyze(analysis_keyframes)
                 warnings.extend(fa_warnings)
-                logger.info("VLM 画面分析完成: %d/%d", len(frame_analyses), len(keyframes))
+                logger.info(
+                    "VLM 画面分析完成: %d/%d%s",
+                    len(frame_analyses), len(keyframes),
+                    f"，实际模型: {vlm_usage.model}" if vlm_usage.model else "",
+                )
             except Exception as e:
                 logger.exception("VLM 画面分析整体失败")
                 warnings.append(Warning(
@@ -256,7 +264,11 @@ class VideoParser:
                 transcript_segments, frame_analyses,
             )
             warnings.extend(sec_warnings)
-            logger.info("章节构建完成: %d 章", len(sections))
+            logger.info(
+                "章节构建完成: %d 章%s",
+                len(sections),
+                f"，实际模型: {sec_usage.model}" if sec_usage.model else "",
+            )
         except Exception as e:
             # 章节构建器整体异常时，强制走确定性回退保证有章节产出
             logger.exception("章节构建失败，降级为确定性回退")
