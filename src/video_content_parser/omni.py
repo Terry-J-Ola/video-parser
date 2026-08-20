@@ -32,12 +32,26 @@ def _extract_content(chunk: Any) -> list[str]:
     return results
 
 
+def _capture_chunk_model(chunk: Any, usage: ModelTokenUsage) -> None:
+    """从流式响应的 chunk 中提取 model 字段（含快照版本号），写入 usage.model。
+
+    OpenAI SDK 流式响应的每个 chunk 都带 model 字段，与请求时的 model 名一致，
+    可能是快照版本（如 qwen3-asr-flash-2025-09-08）。多 chunk 场景只填充首次。
+    """
+    if usage.model:
+        return
+    chunk_model = getattr(chunk, "model", None)
+    if isinstance(chunk_model, str) and chunk_model:
+        usage.model = chunk_model
+
+
 def collect_stream_text(stream: Iterable[Any]) -> tuple[str, ModelTokenUsage]:
     """从同步流式响应中收集所有文本增量，以及最后一个 chunk 中携带的 usage。"""
     parts: list[str] = []
     usage = ModelTokenUsage()
     for chunk in stream:
         parts.extend(_extract_content(chunk))
+        _capture_chunk_model(chunk, usage)
         chunk_usage = getattr(chunk, "usage", None)
         if chunk_usage is not None:
             usage.add_usage_dict(chunk_usage)
@@ -50,6 +64,7 @@ async def collect_stream_text_async(stream: AsyncIterable[Any]) -> tuple[str, Mo
     usage = ModelTokenUsage()
     async for chunk in stream:
         parts.extend(_extract_content(chunk))
+        _capture_chunk_model(chunk, usage)
         chunk_usage = getattr(chunk, "usage", None)
         if chunk_usage is not None:
             usage.add_usage_dict(chunk_usage)

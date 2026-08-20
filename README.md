@@ -1,85 +1,236 @@
-# Video Content Parser CLI
+# Video Content Parser（视频内容解析器）
 
-从本地视频提取语音文本、关键帧和语义章节，输出忠实的视频内容概要、技术证据稿和结构化 JSON。
+`video-parser` 是一个 Codex Plugin，也可以作为独立 Python CLI 使用。它从本地视频提取音频和关键帧，调用远程模型完成 ASR、画面理解和内容整理，最终生成：
 
-## 安装
+- 忠实的视频内容概要（业务讲义）
+- 按时间戳交错排列的技术证据稿
+- 结构化 `parse_result.json`
+- 批量 XLSX 耗时与分模型 Token 统计
+- DEBUG 级运行日志
+
+输入视频保留在本地；提取后的音频和选定关键帧会发送给配置的远程模型服务。处理敏感视频前应确认已获得授权。
+
+## 默认模型与配置
+
+默认模型：
+
+| 阶段 | 默认模型 |
+|---|---|
+| 音频转写 | `qwen3-asr-flash` |
+| 关键帧理解 | `qwen3-vl-flash` |
+| 章节与概要 | `qwen3.7-plus` |
+
+推荐使用插件附带的配置脚本，它把 Key 写入用户私有配置文件，不会写入仓库或输出产物：
 
 ```powershell
-python -m pip install .
+python skills\summarize-video\scripts\configure.py
 ```
 
-## 配置
+也可以通过环境变量或 `.env` 配置：
 
-复制 `.env.example` 为 `.env`，配置以下字段：
-
-```text
-VIDEO_PARSER_API_KEY=your-api-key
-VIDEO_PARSER_BASE_URL=https://your-base-url/v1
+```dotenv
+VIDEO_PARSER_API_KEY=your-key
+VIDEO_PARSER_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 VIDEO_PARSER_ASR_MODEL=qwen3-asr-flash
 VIDEO_PARSER_VLM_MODEL=qwen3-vl-flash
 VIDEO_PARSER_SUMMARY_MODEL=qwen3.7-plus
 ```
 
-API Key 必须已开通对应模型权限。
+兼容旧变量名 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`ASR_MODEL`、`VLM_MODEL` 和 `SECTION_MODEL`。读取优先级为：系统环境变量、显式 `--env-file`、用户私有配置、当前目录 `.env`。
 
-环境变量优先级最高，也可以通过 `--env-file <配置文件>` 显式指定配置。插件内的 Skill 使用用户目录下的配置文件，不会把 Key 写进插件。
+## 安装与运行
 
-## 启动
+### Codex Plugin
 
-指定输入和输出路径：
+仓库地址：[Terry-J-Ola/video-parser](https://github.com/Terry-J-Ola/video-parser)
 
-```powershell
-video-content-parser <input_video> <output_dir>
-python -m video_content_parser <input_video> <output_dir>
-```
-
-不传路径时，CLI 批量处理当前工作目录 `input/` 中的全部支持视频，并写入 `output/<视频名>/`。运行以下命令查看全部参数：
+安装插件后，Codex 会通过 `skills/summarize-video/scripts/` 中的包装脚本检查配置、安装隔离运行时并调用 CLI。Skill 的标准调用入口为：
 
 ```powershell
-video-content-parser --help
+# 检查运行时和配置，不显示 Key
+python skills\summarize-video\scripts\check_runtime.py
+
+# 单视频
+python skills\summarize-video\scripts\run_parser.py "D:\videos\demo.mp4" "D:\outputs\demo"
+
+# 批量目录
+python skills\summarize-video\scripts\run_parser.py --input-dir "D:\videos" --output-root "D:\outputs"
 ```
 
-安装后，默认的 `input/` 和 `output/` 均相对于当前工作目录。批量运行可以显式指定：
+`run_parser.py` 保证 stdout 只输出一个 UTF-8 JSON 对象，进度与诊断写入 stderr。
+
+### 独立 CLI
+
+开发环境安装：
 
 ```powershell
-video-content-parser --input-dir <视频目录> --output-root <输出根目录>
+python -m pip install -e .
+video-content-parser --version
 ```
 
-供 Plugin、Skill 或自动化调用时，使用纯 JSON 标准输出：
+常用命令：
 
 ```powershell
-video-content-parser <视频路径> <输出目录> --result-format json
+# 单视频；默认输出到 ./output/<视频名>/
+video-content-parser "D:\videos\demo.mp4"
+
+# 指定单视频输出目录
+video-content-parser "D:\videos\demo.mp4" "D:\outputs\demo"
+
+# 批量处理目录第一层的视频
+video-content-parser --input-dir "D:\videos" --output-root "D:\outputs"
+
+# 强制重新解析已有 complete 结果
+video-content-parser "D:\videos\demo.mp4" "D:\outputs\demo" --force
 ```
 
-## 输出
+批量扫描不递归。支持 `.mp4`、`.mkv`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm` 和 `.m4v`。
 
-- `parse_result.json`
-- `<视频名>_技术证据稿.md`：按时间展示转写、关键帧、画面分析和告警
-- `<视频名>_业务讲义.md`：根据输入证据生成的视频内容概要；不扩写证据未表达的内容，不展示时间轴、证据 ID 或关键帧图片
-- `assets/audio.mp3`
-- `assets/keyframes/*.jpg`
-- 批量模式额外生成 `batch_summary_YYYYMMDD_HHMMSS.xlsx`：逐视频记录 ASR、VLM、概要模型名称及各自 Token、Token 总量和耗时，并通过公式分别汇总三类模型 Token、总 Token、视频数量和总耗时
+## CLI 参数
 
-## Codex Plugin
+| 参数 | 默认值 | 说明 |
+|---|---:|---|
+| `source` | 无 | 单视频路径；不填时进入批量模式 |
+| `output_dir` | `./output/<视频名>/` | 单视频输出目录 |
+| `--input-dir` | `./input/` | 批量输入目录 |
+| `--output-root` | `./output/` | 批量输出根目录 |
+| `--env-file` | 无 | 显式 Provider 配置文件 |
+| `--result-format` | `text` | `text` 或 `json` |
+| `--force, -f` | 关闭 | 忽略已有 complete 结果并重跑 |
+| `--language` | 自动 | ASR 语言提示，如 `zh`、`en` |
+| `--audio-chunk-seconds` | `30` | ASR 音频分片秒数，范围 15～60 |
+| `--audio-overlap-seconds` | `2.0` | 相邻 ASR 分片重叠秒数，减少句子截断 |
+| `--scene-threshold` | `0.30` | 场景切换阈值，越低越敏感 |
+| `--fallback-frame-interval` | `10.0` | 场景检测无结果时的固定抽帧间隔 |
+| `--max-keyframes` | `60` | 单视频最多保留关键帧数 |
+| `--keyframe-max-width` | `1280` | 关键帧最大宽度 |
+| `--dedup-hamming-threshold` | `6` | 相邻帧 dHash 去重阈值；`0` 表示关闭去重 |
+| `--vlm-concurrency` | `4` | VLM 批次最大并发数 |
 
-仓库根目录是 `video-parser` 插件，正式清单位于 `.codex-plugin/plugin.json`。插件包含 `skills/summarize-video/` 工作流以及同版本的 Python CLI 源码。
-
-首次使用时，Codex 会检查运行环境；如果 CLI 尚未安装，Skill 会在用户目录 `~/.video-parser/runtime` 创建私有虚拟环境并从当前插件根目录安装。如果尚未配置模型服务，Skill 会引导用户通过隐藏输入将 Key 写入用户级配置文件。
-
-插件当前采用最小的 Skills-only 形态，不包含 MCP 服务或自定义 UI。发布到公开仓库后，可以加入仓库 Marketplace 或提交到 ChatGPT 与 Codex 共用的公共 Plugins Directory。
-
-### 从 GitHub 安装插件
-
-其他用户安装 Codex/ChatGPT 桌面应用后，可以在终端添加本仓库 Marketplace：
-
-```powershell
-codex plugin marketplace add Terry-J-Ola/video-parser --ref main
-```
-
-然后在桌面应用的 Plugins Directory 中选择 `Terry-J-Ola Plugins`，安装 `Video Content Parser`，并新建一个任务。例如告诉 Codex：
+## 处理流程
 
 ```text
-使用 summarize-video，把 D:\videos 中的视频处理到 D:\video-output。
+本地视频
+  ├─ FFmpeg 提取音频 → 重叠分片 → qwen3-asr-flash
+  ├─ 场景检测/间隔回退 → dHash + 像素复核 → qwen3-vl-flash
+  └─ 转写与画面证据 → qwen3.7-plus
+       ├─ 技术证据稿
+       ├─ 忠实内容概要
+       └─ parse_result.json
 ```
 
-首次运行时，Skill 会检查 CLI 和模型服务配置。用户需要 Python 3.10+，并能访问 Python 依赖源和所配置的模型服务；Skill 会把 Python 依赖安装到用户目录下的私有运行时。媒体处理使用 `imageio-ffmpeg` 提供的 FFmpeg，不要求用户另行配置系统 `ffprobe`。API Key 只保存在用户本机，不会上传到 GitHub 或写入视频产物。
+处理特点：
+
+- ASR 分片默认保留 2 秒重叠区，并对相邻结果去重。
+- VLM 批次请求失败时降级为逐帧分析，尽量保留可用证据。
+- 技术证据稿把转写和画面证据按时间戳交错排列。
+- 内容概要只压缩已有证据，保留明确出现的名称、数字、条件、示例和顺序。
+- 任一核心阶段不完整时结果标记为 `partial`，不会伪装成完整结果。
+
+## 输出结构
+
+无警告结果写入正常目录；带警告结果写入 `_warnings`：
+
+```text
+<output-root>/
+├─ <视频名>/
+│  ├─ parse_result.json
+│  ├─ <视频名>_技术证据稿.md
+│  ├─ <视频名>_业务讲义.md          # learner_document 成功时生成
+│  └─ assets/
+│     ├─ audio.mp3
+│     ├─ _chunks/*.mp3
+│     └─ keyframes/*.jpg
+├─ _warnings/<视频名>/              # partial 或存在警告时
+├─ logs/parse_YYYYMMDD_HHMMSS.log
+└─ batch_summary_YYYYMMDD_HHMMSS.xlsx
+```
+
+批量 XLSX 在一个工作表中记录：
+
+- 视频文件名和状态
+- ASR、VLM、概要模型名称及各自 Token
+- 单视频总 Token 和耗时
+- 分阶段 Token、批次总 Token、视频数量和总耗时的公式汇总
+
+Token 以服务端返回的 usage 为准；服务未返回、跳过或失败时可能为 `0`。
+
+## JSON 契约
+
+`parse_result.json` 顶层 schema 为 `video_parse_result.v3`：
+
+```json
+{
+  "schema_version": "video_parse_result.v3",
+  "app_version": "0.4.0",
+  "runtime_package_path": "D:\\path\\to\\video_content_parser",
+  "status": "complete",
+  "source_name": "demo.mp4",
+  "duration_ms": 146000,
+  "title": "视频标题",
+  "languages": ["zh"],
+  "summary": "忠实内容概要",
+  "artifacts": {
+    "audio_path": "assets/audio.mp3",
+    "evidence_markdown_path": "demo_技术证据稿.md",
+    "learner_markdown_path": "demo_业务讲义.md"
+  },
+  "transcript_segments": [],
+  "keyframes": [],
+  "frame_analyses": [],
+  "sections": [],
+  "learner_document": {},
+  "warnings": [],
+  "token_usage": {
+    "asr": {"model": "qwen3-asr-flash", "total_tokens": 0},
+    "vlm": {"model": "qwen3-vl-flash", "total_tokens": 0},
+    "sections": {"model": "qwen3.7-plus", "total_tokens": 0}
+  }
+}
+```
+
+`app_version` 与 `runtime_package_path` 用于确认本次任务实际加载了哪个版本、哪一份 Python 包；运行日志启动部分也会记录相同信息。
+
+Skill 包装层 stdout 使用独立的 `video_content_parser.cli.v3` 契约，包含 `mode`、状态汇总、逐视频结果，以及批量模式的 `batch_summary_xlsx`。完整字段和退出码见 [output-contract.md](skills/summarize-video/references/output-contract.md)。
+
+## 状态、跳过与退出码
+
+- 已存在 `status=complete` 的结果时默认跳过；`--force` 可重跑。
+- `partial` 结果不会被跳过，下次运行会重新处理。
+- 有任何 warning 的结果会被分流到 `_warnings/<视频名>/`。
+- 退出码 `0`：完成或跳过。
+- 退出码 `1`：输入无效或致命失败。
+- 退出码 `2`：运行时或 Provider 配置缺失。
+- 退出码 `4`：存在可用但不完整的 partial 结果。
+
+## 日志与排错
+
+每次真实运行在 `<output-root>/logs/` 创建 `parse_*.log`：
+
+| 通道 | 级别 | 内容 |
+|---|---|---|
+| 控制台 | INFO 及以上 | 当前视频、阶段进度和结果 |
+| 文件 | DEBUG 及以上 | ASR 分片、VLM 批次与单帧降级、关键帧去重、重试和完整异常堆栈 |
+
+批量日志带 `[视频名]` 前缀。日志不记录 API Key。结果为 `partial`、`failed` 或带警告时，应优先查看对应运行日志。
+
+## 开发验证
+
+```powershell
+# 使用可用的 Python 运行测试
+python -m unittest discover -s tests -v
+
+# 验证源码 CLI
+$env:PYTHONPATH = "$PWD\src"
+python -m video_content_parser --version
+python -m video_content_parser --help
+```
+
+发布版本需要同时更新：
+
+- `.codex-plugin/plugin.json`
+- `pyproject.toml`
+- `src/video_content_parser/__init__.py`
+- `skills/summarize-video/runtime-version.txt`
+
+安装版插件和私有 CLI 只有在执行插件更新/重装后才会切换到新版本。

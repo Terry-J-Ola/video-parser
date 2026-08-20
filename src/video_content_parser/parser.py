@@ -27,6 +27,7 @@ from .frame_analysis import (
     create_vlm_backend,
 )
 from .keyframes import extract_keyframes
+from .logging_config import get_logger
 from .models import (
     Artifacts,
     FrameAnalysis,
@@ -45,6 +46,8 @@ from .sections import (
     create_section_builder,
 )
 from .writer import write_outputs
+
+logger = get_logger(__name__)
 
 
 # 这些警告码一旦出现，说明核心内容采集环节失败，结果只能算 partial
@@ -158,7 +161,9 @@ class VideoParser:
         audio_path = assets_dir / "audio.mp3"
         audio_artifact = extract_audio(source, audio_path)
         timings.append(("抽取音频", time.perf_counter() - t0))
+        logger.info("音频抽取完成: %s", audio_path.name)
         if audio_artifact is None:
+            logger.warning("视频无可用音频轨道")
             warnings.append(Warning(
                 code="NO_AUDIO_TRACK",
                 message="No usable audio track found.",
@@ -170,9 +175,16 @@ class VideoParser:
         t0 = time.perf_counter()
         if audio_artifact is not None:
             asr = self._get_asr_backend(options)
+            logger.info("开始 ASR 转写: %s", audio_path.name)
             try:
                 transcript_segments, asr_usage = asr.transcribe(audio_path, options.language)
+                logger.info(
+                    "ASR 转写完成: %d 段%s",
+                    len(transcript_segments),
+                    f"，实际模型: {asr_usage.model}" if asr_usage.model else "",
+                )
             except Exception as e:
+                logger.exception("ASR 转写整体失败")
                 warnings.append(Warning(
                     code="ASR_FAILED",
                     message=f"ASR transcription failed: {e}",
@@ -182,9 +194,12 @@ class VideoParser:
         # 3. 抽取关键帧
         keyframes: list[Keyframe] = []
         t0 = time.perf_counter()
+        logger.info("开始抽取关键帧")
         try:
             keyframes = extract_keyframes(source, tmp_dir, options, duration_ms)
+            logger.info("关键帧抽取完成: %d 帧", len(keyframes))
         except Exception as e:
+            logger.exception("关键帧抽取失败")
             warnings.append(Warning(
                 code="NO_KEYFRAMES",
                 message=f"Keyframe extraction failed: {e}",
@@ -213,6 +228,7 @@ class VideoParser:
         t0 = time.perf_counter()
         if keyframes:
             vlm = self._get_vlm_backend(options)
+            logger.info("开始 VLM 画面分析: %d 帧", len(keyframes))
             try:
                 # 把图片路径指向输出目录中的正式副本
                 analysis_keyframes = [
@@ -223,7 +239,13 @@ class VideoParser:
                 ]
                 frame_analyses, fa_warnings, vlm_usage = vlm.analyze(analysis_keyframes)
                 warnings.extend(fa_warnings)
+                logger.info(
+                    "VLM 画面分析完成: %d/%d%s",
+                    len(frame_analyses), len(keyframes),
+                    f"，实际模型: {vlm_usage.model}" if vlm_usage.model else "",
+                )
             except Exception as e:
+                logger.exception("VLM 画面分析整体失败")
                 warnings.append(Warning(
                     code="FRAME_ANALYSIS_FAILED",
                     message=f"Frame analysis failed: {e}",
@@ -236,13 +258,20 @@ class VideoParser:
         sec_usage = ModelTokenUsage()
         sec_builder = self._get_section_builder(options)
         t0 = time.perf_counter()
+        logger.info("开始章节构建")
         try:
             sections, learner_document, sec_warnings, sec_usage = sec_builder.build(
                 transcript_segments, frame_analyses,
             )
             warnings.extend(sec_warnings)
+            logger.info(
+                "章节构建完成: %d 章%s",
+                len(sections),
+                f"，实际模型: {sec_usage.model}" if sec_usage.model else "",
+            )
         except Exception as e:
             # 章节构建器整体异常时，强制走确定性回退保证有章节产出
+            logger.exception("章节构建失败，降级为确定性回退")
             from .sections import ChatSectionBuilder
             warnings.append(Warning(
                 code="SECTION_BUILDER_FAILED",
@@ -323,6 +352,7 @@ class VideoParser:
         t0 = time.perf_counter()
         write_outputs(result, output_dir)
         timings.append(("写入文件", time.perf_counter() - t0))
+        logger.info("结果已写入: %s", output_dir)
 
         # 打印各步骤耗时报告
         total = sum(sec for _, sec in timings)

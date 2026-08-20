@@ -211,6 +211,11 @@ class BatchSummaryXlsxTests(unittest.TestCase):
             self.assertEqual(payload["results"][0]["elapsed_seconds"], 12.5)
             self.assertTrue(report_path.is_file())
             self.assertEqual(report_path.suffix, ".xlsx")
+            log_files = list((output_root / "logs").glob("parse_*.log"))
+            self.assertEqual(len(log_files), 1)
+            log_text = log_files[0].read_text(encoding="utf-8")
+            self.assertIn("程序版本: 0.4.0", log_text)
+            self.assertIn("运行包路径:", log_text)
 
 
 if __name__ == "__main__":

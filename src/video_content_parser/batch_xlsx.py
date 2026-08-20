@@ -243,8 +243,8 @@ def _worksheet_xml(records: Sequence[BatchRecord], generated_at: datetime) -> st
     <col min="11" max="11" width="18" customWidth="1"/>
   </cols>
   <sheetData>{''.join(rows)}</sheetData>
-  <mergeCells count="3"><mergeCell ref="A1:K1"/><mergeCell ref="A2:K2"/><mergeCell ref="A3:K3"/></mergeCells>
   {auto_filter}
+  <mergeCells count="3"><mergeCell ref="A1:K1"/><mergeCell ref="A2:K2"/><mergeCell ref="A3:K3"/></mergeCells>
   <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
 </worksheet>'''
 
